@@ -19,18 +19,18 @@ both thread and chrono on Windows or OS X.)
 How to make
 -----------
 
-    Install dependency packages.
+Install dependency packages.
 
     $ sudo apt-get install build-essential libglfw-dev libglew1.6-dev libopencv-dev
 
-    Make the program.
+Make the program.
 
     $ make all
 
 How to use
 ----------
 
-    Start the program and type `help` for further instructions.
+Start the program and type `help` for further instructions.
 
     $ ./main
 
