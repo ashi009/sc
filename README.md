@@ -27,6 +27,10 @@ Make the program.
 
     $ make all
 
+Make on windoes.
+    
+    $ make all TARGET=windows
+    
 How to use
 ----------
 
