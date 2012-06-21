@@ -1,10 +1,16 @@
 CC = g++
-CFLAGS = -g -Wall -O2 -std=c++0x
+CPPFLAGS = -g -Wall -O2 -std=c++0x
 sources = $(wildcard *.cc)
 objects = $(sources:.cc=.o)
 
-force_check:;
+TARGET ?= linux
+
+ifeq ($(TARGET),linux)
+other_flags += 
+else
+other_flags += -DGLFWTHREAD
+endif
 
 .cc.o: 
-	$(CC) $(CFLAGS) $(include_dirs) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(other_flags) $(include_dirs) -c $< -o $@
 

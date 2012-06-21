@@ -41,8 +41,12 @@ namespace sc {
 
 const int kMaxStreamWidth = 1920;
 const int kMaxStreamHeight = 1080;
+
+#ifdef PBO
 const float kOneOverMaxStreamWidth = 1.0f / kMaxStreamWidth;
 const float kOneOverMaxStreamHeight = 1.0f / kMaxStreamHeight;
+#endif
+
 const float kViewNear = 0.1;
 const float kViewFar = 1000;
 
@@ -90,10 +94,12 @@ Controller::~Controller() {
 
 void Controller::BeforeStart() {
 
+#ifndef GLFWTHREAD
   if (!glfwInit()) {
     cerr << "Failed to initialize GLFW." << endl;
     exit(EXIT_FAILURE);
   }
+#endif
 
   glfwOpenWindowHint(GLFW_OPENGL_VERSION_MAJOR, 2);
   glfwOpenWindowHint(GLFW_OPENGL_VERSION_MINOR, 1);
@@ -114,7 +120,15 @@ void Controller::BeforeStart() {
   glfwSetWindowSizeCallback(WindowResizeListener);
   glfwSetWindowCloseCallback(WindowCloseHandler);
 
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 3);
+  // XXX GL_UNPACK_ALIGNMENT = 3 caused some problem when test with a video of
+  // 854x480 resolution. After changing its value to 1, the problem resolved.
+  // To read more insights, please check the link below.
+  // http://www.opengl.org/archives/resources/features/KilgardTechniques/oglpitfall/
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+  glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+  glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+
   glEnable(GL_DEPTH_TEST | GL_TEXTURE_2D);
   glDepthFunc(GL_LEQUAL);
 
@@ -153,22 +167,30 @@ void Controller::BeforeStart() {
 
   // Specify default vertex positions, which is constant.
   *vertex_pos_ptr_ = kVertexPositions;
-
-  // Set up a series PBO buffers to minimizing texture MEM-VRAM copying time.
-  pixel_buffers_ = make_shared<Buffer>(2);
-  pbo_index_ = 0;
-
+  
   texture_->Bind(GL_TEXTURE_2D);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-
+  
+#ifdef PBO
+  // Set up a series PBO buffers to minimizing texture MEM-VRAM copying time.
+  pixel_buffers_ = make_shared<Buffer>(2);
+  pbo_index_ = 0;
   // Prepare texture_storage_ for PBO switching.
   texture_storage_ = new GLubyte[kMaxStreamWidth * kMaxStreamHeight * 3];
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, kMaxStreamWidth, kMaxStreamHeight, 0, 
       GL_BGR, GL_UNSIGNED_BYTE, texture_storage_);
-      
+#else
+  *texture_pos_ptr_ = vector<GLfloat> {
+    0.0, 1.0,
+    0.0, 0.0,
+    1.0, 1.0,
+    1.0, 0.0
+  };
+#endif
+
   // Call reset to initiate some scence parameters.
   Reset();
 
@@ -188,10 +210,12 @@ void Controller::BeforeEnd() {
   vertex_pos_ptr_.reset();
   texture_pos_ptr_.reset();
   program_.reset();
-  pixel_buffers_.reset();
   texture_.reset();
 
+#ifdef PBO
+  pixel_buffers_.reset();
   delete[] texture_storage_;
+#endif
 
   // Free OpenGL render context
   glfwTerminate();
@@ -215,7 +239,7 @@ bool Controller::Tick(TickId actual_frame, const TimePoint &epoch) {
   // Calculates projection matrix.
   Matrix<4> projection_matrix = matrix_post_ * (mode_ == kPerspective ? 
         gl::matrix::Perspective(45, g_width / g_height, kViewNear, kViewFar) :
-        gl::matrix::Orthographic(g_width, g_height, kViewNear, kViewFar)
+        gl::matrix::Orthographic(g_width, g_height, -kViewFar, kViewFar)
       ) * matrix_world_;
 
   // Setss projection_matrix.
@@ -229,19 +253,23 @@ bool Controller::Tick(TickId actual_frame, const TimePoint &epoch) {
     
     int width = source->width();
     int height = source->height();
+#ifdef PBO
     float normalized_width = width * kOneOverMaxStreamWidth;
     float normalized_height = height * kOneOverMaxStreamHeight;
     int next_index = pbo_index_;
+#endif
     
     for (int i = 0; i < feeds.size(); i++) {
       // Query a feed to update their current_image.
       feeds[i]->Query(now);
       // Get feed's current_image data.
       auto data = feeds[i]->current_image();
-      
+
+#ifdef PBO
       // Always check if current pbo needs to be copied to texture.
       if (CopyPBO(pbo_info_[pbo_index_]))
         next_index = pbo_index_ ^ 1;
+#endif
 
       // If there are no data in the feed's current_image ptr, skip it.
       if (!data)
@@ -249,12 +277,12 @@ bool Controller::Tick(TickId actual_frame, const TimePoint &epoch) {
       
       // Check if the feed's target is off the screen, if so, skip it.
       Matrix<4> final_matrix = projection_matrix * params[i].matrix;
-      Vector<3> pos_inits = final_matrix.Transform(kStandardCords[i]);
+      Vector<3> pos_inits = final_matrix.Transform(kStandardCords[0]);
       float x_min = pos_inits.data[0], x_max = pos_inits.data[0];
       float y_min = pos_inits.data[1], y_max = pos_inits.data[1];
       float z_min = pos_inits.data[2], z_max = pos_inits.data[2];
-      for (int i = 1; i < 4; i++) {
-        Vector<3> pos = final_matrix.Transform(kStandardCords[i]);
+      for (int j = 1; j < 4; j++) {
+        Vector<3> pos = final_matrix.Transform(kStandardCords[j]);
         if (pos.data[0] < x_min) x_min = pos.data[0];
         else if (pos.data[0] > x_max) x_max = pos.data[0];
         if (pos.data[1] < y_min) y_min = pos.data[1];
@@ -268,6 +296,7 @@ bool Controller::Tick(TickId actual_frame, const TimePoint &epoch) {
           z_max < -1 || z_min > 1)
         continue;
 
+#ifdef PBO
       // Allocated a memory buffer, then ask to fill if with data.
       (*pixel_buffers_)[next_index].Bind(GL_PIXEL_UNPACK_BUFFER);
       glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * 3, nullptr, 
@@ -288,20 +317,33 @@ bool Controller::Tick(TickId actual_frame, const TimePoint &epoch) {
       glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
       if (RenderPBO(pbo_info_[pbo_index_]))
         pbo_index_ = next_index;
+#else
+
+      *module_matrix_ptr_ =  params[i].matrix.data;
+      *module_hsb_tune_ptr_ = params[i].hsb_tune.data;
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_BGR, 
+          GL_UNSIGNED_BYTE, data);
+      glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
       
+#endif
+ 
     }
     
   }
-  
+
+#ifdef PBO
   if (RenderPBO(pbo_info_[pbo_index_]))
     pbo_index_ ^= 1;
-  
+#endif
+
 #ifdef GLFWTHREAD
   glfwUnlockMutex(lock_);
 #endif
 
   return true;
 }
+
+#ifdef PBO
 
 bool Controller::FillPBO(Controller::PBOInfo &pbo_info) {
 
@@ -381,6 +423,7 @@ bool Controller::RenderPBO(Controller::PBOInfo &pbo_info) {
 
 }
 
+#endif
 
 void Controller::Reset() {
 

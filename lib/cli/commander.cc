@@ -2,7 +2,11 @@
 #include <sstream>
 #include <iterator>
 
+#ifndef __MINGW32__
 #include <sys/ioctl.h>
+#else
+#include <windows.h>
+#endif
 
 #include "commander.h"
 
@@ -76,10 +80,19 @@ void Commander::ShowDescriptions() {
   if (descriptions_.empty())
     return;
 
+  int line_width = 80;
+  
+#ifndef __MINGW32__
   winsize w;
   ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
-
-  int line_width = w.ws_col;
+  if (w.ws_col > 0)
+    line_width = w.ws_col;
+#else
+  CONSOLE_SCREEN_BUFFER_INFO info;
+  if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info) 
+      && info.dwSize.X > 0)
+    line_width = info.dwSize.X;
+#endif
   
   int padding = 0;
   for (auto it = descriptions_.begin(); it != descriptions_.end(); it++)

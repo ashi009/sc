@@ -1,9 +1,5 @@
-#include <iostream>
-
 #include <cmath>
 #include "timer.h"
-
-using namespace std;
 
 using std::max;
 using std::ref;
@@ -27,6 +23,7 @@ Timer::~Timer() {
     thread_.join();
 #else
   glfwWaitThread(thread_, GLFW_WAIT);
+  glfwDestroyThread(thread_);
 #endif
 }
 
@@ -41,6 +38,7 @@ void Timer::Start(double defined_tps = 0) {
   // problem here, for there is no atomic type in GLFWTHREAD.
   if (!running_) {
     running_ = true;
+    tps_ = defined_tps;
     thread_ = glfwCreateThread(defined_tps > 0 ? StaticTimer : DynamicTimer,
         (void*)this);
   }
@@ -60,7 +58,7 @@ void Timer::StaticTimer(Timer &self) {
 #else
 void Timer::StaticTimer(void *self_ptr) {
   
-  Timer *self = self_ptr;
+  Timer &self = *(Timer*)self_ptr;
 #endif
 
   self.ticker_->BeforeStart();
@@ -112,8 +110,8 @@ void Timer::StaticTimer(void *self_ptr) {
 #ifndef GLFWTHREAD
     sleep_until(expect_time);
 #else
-    glfwSleep(static_cast<chrono::milliseconds>(expect_time - Clock::now()) / 
-        1000.0);
+    glfwSleep(duration_cast<std::chrono::milliseconds>(expect_time - Clock::now())
+        .count() / 1000.0);
 #endif
 
   }
@@ -127,7 +125,7 @@ void Timer::DynamicTimer(Timer &self) {
 #else
 void Timer::DynamicTimer(void *self_ptr) {
   
-  Timer *self = self_ptr;
+  Timer &self = *(Timer*)self_ptr;
 #endif
   
   self.ticker_->BeforeStart();
@@ -160,8 +158,8 @@ void Timer::DynamicTimer(void *self_ptr) {
 #ifndef GLFWTHREAD
     sleep_until(expect_time);
 #else
-    glfwSleep(static_cast<chrono::milliseconds>(expect_time - Clock::now()) / 
-        1000.0);
+    glfwSleep(duration_cast<std::chrono::milliseconds>(expect_time - Clock::now())
+        .count() / 1000.0);
 #endif
 
   }

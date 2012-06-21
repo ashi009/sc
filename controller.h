@@ -89,6 +89,8 @@ class Controller : public vc::timing::Ticker {
   GLubyte *texture_storage_;
   gl::BufferResource pixel_buffers_;
   
+#ifdef PBO
+
   struct PBOInfo {
     int index;
     int width, height;
@@ -103,6 +105,8 @@ class Controller : public vc::timing::Ticker {
   bool CopyPBO(PBOInfo&);
   bool FillPBO(PBOInfo&);
   bool RenderPBO(PBOInfo&);
+
+#endif
 
 };
 

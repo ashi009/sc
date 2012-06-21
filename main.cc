@@ -4,6 +4,9 @@
 #include <vector>
 #include "cli.h"
 #include "vc.h"
+#ifdef GLFWTHREAD
+#include "gl.h"
+#endif
 #include "appinfo.h"
 #include "controller.h"
 
@@ -79,6 +82,13 @@ int main(int argc, char *argv[]) {
 
   bool is_spawn = argc > 1 && string(argv[1]) == "--spawn";
 
+#ifdef GLFWTHREAD
+  if (!glfwInit()) {
+    cerr << "Failed to initialize GLFW." << endl;
+    exit(EXIT_FAILURE);
+  }
+#endif
+  
   Controller controller;
   timing::Timer render_timer(&controller);
 
@@ -267,7 +277,7 @@ int main(int argc, char *argv[]) {
       "bgcolor", {
         "{#xxxxxx | {red} {green} {blue}}",
         "Set background color. You may use either hex format or decimal format"
-        "{red}, {green} and {blue} should within 0 and 1.",
+        "{red}, {green} and {blue} should between 0 and 1.",
         "example:",
         "bgcolor #cccccc"
       }, [&]() {

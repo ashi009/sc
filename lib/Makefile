@@ -4,7 +4,7 @@ dirs = gl vc cli
 
 all: $(dirs)
 
-$(dirs): force_check
+$(dirs): FORCE
 	$(MAKE) -C $@ all
 
 clean:
@@ -12,3 +12,6 @@ clean:
 		$(MAKE) -C $$dir clean; \
 	done
 
+FORCE:
+
+.PHONY: FORCE all clean

@@ -54,7 +54,11 @@ class Timer {
   bool running_;
 #endif
   Ticker *ticker_;
+#ifndef GLFWTHREAD
   std::thread thread_;
+#else
+  GLFWthread thread_;
+#endif
 
 };
 
