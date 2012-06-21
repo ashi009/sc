@@ -23,11 +23,11 @@ Install dependency packages.
 
     $ sudo apt-get install build-essential libglfw-dev libglew1.6-dev libopencv-dev
 
-Make the program.
+Make the program on linux.
 
     $ make all
 
-Make on windoes.
+Make the program on windows.
     
     $ make all TARGET=windows
     
