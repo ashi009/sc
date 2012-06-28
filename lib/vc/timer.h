@@ -22,7 +22,7 @@ namespace timing {
 // changes the tps, to adapt the Ticker's needs.
 class Timer {
  public:
-  Timer(Ticker *);
+  Timer(Ticker *, bool new_thread = true);
   Timer(const Timer&) = delete;
   Timer& operator = (const Timer&) = delete;
   virtual ~Timer();
@@ -48,6 +48,7 @@ class Timer {
   TimePoint epoch_;
   utils::WindowedAverage<TickId> tick_skew_avg_;
   utils::WindowedAverage<ClockRep> time_skew_avg_, tick_time_avg_;
+  bool new_thread_;
 #ifndef GLFWTHREAD
   std::atomic_bool running_;
 #else

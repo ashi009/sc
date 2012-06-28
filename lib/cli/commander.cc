@@ -37,9 +37,13 @@ Commander::Commander(initializer_list<DescriptiveEntry> vals) {
   }
 }
 
-bool Commander::Parse(const string &command) {
+bool Commander::Parse(const string &query) {
 
   string cmd = "!";
+  string command;
+  istringstream iss(query);
+  if (!(iss >> command))
+    command = "";
   
   if (command.find_first_of(kReservedKeys) == string::npos) {
     auto lb = commands_.lower_bound(command);
@@ -70,7 +74,7 @@ bool Commander::Parse(const string &command) {
   
   auto it = commands_.find(cmd);
   if (it != commands_.end())
-    return it->second();
+    return it->second(iss);
   return false;
 
 }

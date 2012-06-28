@@ -61,7 +61,6 @@ Matrix<4> &Matrix<4>::RotZ(GLfloat deg) {
 }
 
 template<>
-template<>
 Vector<3> Matrix<4>::Transform(const Vector<3> &m) {
   Vector<3> res;
   GLfloat w = 1 / (m.data[0] * data[3] + m.data[1] * data[7] + 
@@ -69,6 +68,26 @@ Vector<3> Matrix<4>::Transform(const Vector<3> &m) {
   for (int i = 0; i < 3; ++i)
     res.data[i] = (m.data[0] * data[i] + m.data[1] * data[4+i] + 
         m.data[2] * data[8+i] + data[12+i]) * w;
+  return res;
+}
+
+template<>
+Vector<3> Matrix<4>::Inverse(float x, float y) {
+  Vector<3> res;
+  float a00 = data[3] * x - data[0];
+  float a01 = data[7] * x - data[4];
+  float a10 = data[3] * y - data[1];
+  float a11 = data[7] * y - data[5];
+  float b0 = data[12] - data[15] * x;
+  float b1 = data[13] - data[15] * y;
+  float D = a01 * a10 - a00 * a11;
+  if (D == 0) D = 1e16;
+  D = 1 / D;
+  res.data[0] = (a01 * b1 - a11 * b0) * D;
+  res.data[1] = (a10 * b0 - a00 * b1) * D;
+  float w = res.data[0] * data[3] + res.data[1] * data[7] + data[15];
+  if (w == 0) w = 1e-16;
+  res.data[2] = (res.data[0] * data[2] + res.data[1] * data[6] + data[14]) / w;
   return res;
 }
 

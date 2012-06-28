@@ -6,7 +6,7 @@
 
 #define APP_NAME "Stream Compositor"
 #define APP_VER_MAJOR 1
-#define APP_VER_MINOR 0
+#define APP_VER_MINOR 1
 #define APP_AURTHOR "Xiaoyi Shi <ashi009@gmail.com>"
 
 #define APP_TITLE APP_NAME " " XSTR(APP_VER_MAJOR) "." \

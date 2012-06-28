@@ -46,8 +46,8 @@ class Matrix : public Data {
   Matrix<Row, Col, T> &RotY(GLfloat);
   Matrix<Row, Col, T> &RotZ(GLfloat);
   
-  template <int N>
-  Vector<N, T> Transform(const Vector<N, T>&);
+  Vector<Col-1, T> Transform(const Vector<Col-1, T>&);
+  Vector<Col-1, T> Inverse(float x, float y);
   
   T data[Row * Col];
   typedef T data_t;

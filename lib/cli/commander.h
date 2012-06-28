@@ -1,6 +1,7 @@
 #ifndef LIB_CLI_COMMANDER_H_
 #define LIB_CLI_COMMANDER_H_
 
+#include <sstream>
 #include <string>
 #include <functional>
 #include <initializer_list>
@@ -11,7 +12,7 @@ namespace cli {
 
 class Commander {
  public:
-  typedef std::function<bool()> Callback;
+  typedef std::function<bool(std::istringstream&)> Callback;
   struct DescriptiveEntry {
     std::string command;
     std::vector<std::string> descriptions;

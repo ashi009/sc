@@ -1,12 +1,16 @@
 #include <cstdio>
 #include <iostream>
+#include <functional>
 #include <sstream>
 #include <vector>
-#include "cli.h"
-#include "vc.h"
-#ifdef GLFWTHREAD
+#include <chrono>
+#ifndef GLFWTHREAD
+#include <thread>
+#else
 #include "gl.h"
 #endif
+#include "cli.h"
+#include "vc.h"
 #include "appinfo.h"
 #include "controller.h"
 
@@ -15,8 +19,6 @@ using namespace cv;
 using namespace cli;
 using namespace vc;
 using namespace sc;
-
-bool g_spin, g_quit;
 
 const string kInvalidMessage = "Invalid input.";
 const string kAmbiguousMessage = "Your input is ambiguous.";
@@ -72,34 +74,52 @@ bool ParseMatrix(istream &iss, vector<float> &matrix) {
 
 }
 
+#ifdef GLFWTHREAD
+
+function<void()> g_payload;
+void PayloadProxy(void *arg) {
+  g_payload();
+}
+
+#endif
+
 int main(int argc, char *argv[]) {
 
   string line, command, id;
   int channel;
   vector<float> matrix(16);
-  
-  istringstream iss;
 
-  bool is_spawn = argc > 1 && string(argv[1]) == "--spawn";
-
-#ifdef GLFWTHREAD
-  if (!glfwInit()) {
-    cerr << "Failed to initialize GLFW." << endl;
-    exit(EXIT_FAILURE);
-  }
-#endif
+  bool is_running = true, is_spawn = false;
+  int width = 640, height = 480;
   
-  Controller controller;
-  timing::Timer render_timer(&controller);
+  Option option({
+    {
+      "--spawn", [&](istringstream &iss) {
+        is_spawn = true;
+      }
+    }, {
+      "--size", [&](istringstream &iss) {
+        char ch;
+        if (!(iss >> width >> ch >> height) || width < 1 || height < 1) {
+          width = 640;
+          height = 480;
+        }
+      }
+    }
+  });
+  option.Parse(argc, argv);
+
+  Controller controller(width, height);
+  timing::Timer render_timer(&controller, false);
 
   Commander cameramode_commander({
     {
-      "perspective", [&]() {
+      "perspective", [&](istringstream &iss) {
         controller.mode(kPerspective);
         return true;
       }
     }, {
-      "orthographic", [&]() {
+      "orthographic", [&](istringstream &iss) {
         controller.mode(kOrthographic);
         return true;
       }
@@ -108,37 +128,37 @@ int main(int argc, char *argv[]) {
 
   Commander commander({
     {
-      "?", {}, [&]() {
+      "?", {}, [&](istringstream &iss) {
         cerr << kUnknownMessage << endl;
         return true;
       }
     }, {
-      "*", {}, [&]() {
+      "*", {}, [&](istringstream &iss) {
         cerr << kAmbiguousMessage << endl;
         return true;
       }
     }, {
-      "!", {}, [&]() {
+      "!", {}, [&](istringstream &iss) {
         return false;
       }
     }, {
       "help", {
         "Show this message."
-      }, [&]() {
+      }, [&](istringstream &iss) {
         commander.ShowDescriptions();
         return true;
       }
     }, {
       "quit", {
         "Quit."
-      }, [&]() {
-        g_quit = true;
+      }, [&](istringstream &iss) {
+        is_running = false;
         return true;
       }
     }, {
       "reset", {
         "Reset scence. Close all opened streams."
-      }, [&]() {
+      }, [&](istringstream &iss) {
         controller.Reset();
         return true;
       }
@@ -150,7 +170,7 @@ int main(int argc, char *argv[]) {
         "examples:",
         "open live camera:0:1",
         "open glee /media/glee.mp4"
-      }, [&]() {
+      }, [&](istringstream &iss) {
         if (!ParseId(iss, id))
           return false;
         string source;
@@ -172,7 +192,7 @@ int main(int argc, char *argv[]) {
       "close", {
         "{id}",
         "Close a stream with given id."
-      }, [&]() {
+      }, [&](istringstream &iss) {
         if (!ParseId(iss, id))
           return false;
         if (!controller.RemoveSource(id))
@@ -185,16 +205,17 @@ int main(int argc, char *argv[]) {
         "Delay a stream for 0 to 2000 milliseconds.",
         "example:",
         "delay live 2000"
-      }, [&]() {
-        if (!ParseId(iss, id)) 
+      }, [&](istringstream &iss) {
+        if (!ParseId(iss, id))
           return false;
-        int delay;
-        iss >> delay;
-        if (delay < 0 || delay > 2000)
+        int duration;
+        iss >> duration;
+        if (duration < 0 || duration > 2000)
           return false;
-        controller.DelaySource(id, delay);
+        controller.DelaySource(id, duration);
         return true;
       }
+#ifndef CPU
     }, {
       "tunecolor", {
         "{id[:channel]} {hue} {saturation} {brightness}",
@@ -205,19 +226,20 @@ int main(int argc, char *argv[]) {
         "channels. For file sources, {channel} can always be ignored.",
         "example:",
         "tunecolor live:1 0 0 0.2"
-      }, [&]() {
-        if (!ParseIdChannel(iss, id, channel)) 
+      }, [&](istringstream &iss) {
+        if (!ParseIdChannel(iss, id, channel))
           return false;
         float hue, saturation, brightness;
         iss >> hue >> saturation >> brightness;
-        if (hue < -180 || hue > 180 || 
-            saturation < -1 || saturation > 1 || 
+        if (hue < -180 || hue > 180 ||
+            saturation < -1 || saturation > 1 ||
             brightness < -1 || brightness > 1)
           return false;
         if (!controller.SetColorTune(id, channel, hue, saturation, brightness))
           cout << kFailureMessage << endl;
         return true;
       }
+#endif  // ifndef CPU
     }, {
       "matrix", {
         "{id[:channel]} {matrix}",
@@ -226,7 +248,7 @@ int main(int argc, char *argv[]) {
         "column-major order. The orginal image was mapped to (-1, -1) to (1, 1).",
         "example:",
         "matrix glee 320 0 0 0 0 240 0 0 0 0 1 0 0 0 0 1"
-      }, [&]() {
+      }, [&](istringstream &iss) {
         if (!ParseIdChannel(iss, id, channel) || !ParseMatrix(iss, matrix))
           return false;
         if (!controller.SetMatrix(id, channel, matrix))
@@ -243,7 +265,7 @@ int main(int argc, char *argv[]) {
         "world transform matrix, C is the camera transform matrix, and P is "
         "the post transform matrix.",
         "Default to 4x4 identity matrix."
-      }, [&]() {
+      }, [&](istringstream &iss) {
         if (!ParseMatrix(iss, matrix))
           return false;
         controller.matrix_world(matrix);
@@ -256,7 +278,7 @@ int main(int argc, char *argv[]) {
         "This matrix used to transform the image camera sees, mainly used for "
         "zooming.",
         "Default to 4x4 identity matrix."
-      }, [&]() {
+      }, [&](istringstream &iss) {
         if (!ParseMatrix(iss, matrix))
           return false;
         controller.matrix_post(matrix);
@@ -267,7 +289,7 @@ int main(int argc, char *argv[]) {
         "{perspective | orthographic}",
         "Set camara projection mode.",
         "For 3D scence use perspective, 2D use orthographic."
-      }, [&]() {
+      }, [&](istringstream &iss) {
         string mode_name;
         if (iss >> mode_name)
           return cameramode_commander.Parse(mode_name);
@@ -280,7 +302,7 @@ int main(int argc, char *argv[]) {
         "{red}, {green} and {blue} should between 0 and 1.",
         "example:",
         "bgcolor #cccccc"
-      }, [&]() {
+      }, [&](istringstream &iss) {
         char ch;
         if ((iss >> ch) && ch == '#') {
           int color;
@@ -296,7 +318,7 @@ int main(int argc, char *argv[]) {
           iss.putback(ch);
           float red, green, blue;
           if (iss >> red >> green >> blue) {
-            if (red < 0 || red > 1 || green < 0 || green > 1 || blue < 0 || 
+            if (red < 0 || red > 1 || green < 0 || green > 1 || blue < 0 ||
                 blue > 1)
               return false;
             controller.background_color(vector<float> { red, green, blue });
@@ -310,7 +332,7 @@ int main(int argc, char *argv[]) {
         "{path}",
         "Make a snapshot for current streams. Snapshots will be saved to "
         "specified folder, and named as {path}/{id}_{channel}.jpg."
-      }, [&]() {
+      }, [&](istringstream &iss) {
         char ch;
         if (!(iss >> ch))
           return false;
@@ -348,9 +370,9 @@ int main(int argc, char *argv[]) {
     }, {
       "profile", {
         "Display current profile."
-      }, [&]() {
+      }, [&](istringstream &iss) {
         // print enviornment params.
-        cout << "cameramode " << (controller.mode() == kPerspective ? 
+        cout << "cameramode " << (controller.mode() == kPerspective ?
             "perspective" : "orthographic") << endl;
         cout << "worldmatrix";
         auto matrix_world = controller.matrix_world();
@@ -391,17 +413,33 @@ int main(int argc, char *argv[]) {
     }, {
       "perfinfo", {
         "Display current performance information."
-      }, [&]() {
-        cout << render_timer.tps() << ' ' << render_timer.time_skew_avg() << 
+      }, [&](istringstream &iss) {
+        cout << render_timer.tps() << ' ' << render_timer.time_skew_avg() <<
             ' ' << render_timer.tick_skew_avg() << endl;
         auto data = controller.data();
         for (auto it = data.begin(); it != data.end(); it++) {
           auto source = get<0>(it->second);
           auto timer = get<1>(it->second);
           cout << it->first << ' ' << source->fps() << ' ' << timer->tps() <<
-              ' ' << timer->time_skew_avg() << ' ' << timer->tick_skew_avg() << 
+              ' ' << timer->time_skew_avg() << ' ' << timer->tick_skew_avg() <<
               endl;
         }
+        return true;
+      }
+    }, {
+      "sleep", {
+        "{duration}",
+        "Sleep for specified duration of time."
+      }, [&](istringstream &iss) {
+        double duration;
+        iss >> duration;
+        if (duration < 0)
+          return false;
+#ifndef GLFWTHREAD
+        this_thread::sleep_for(chrono::milliseconds((int)duration));
+#else  // ifdef GLFWTHREAD
+        glfwSleep(duration / 1000.0);
+#endif  // ifdef GLFWTHREAD
         return true;
       }
     }
@@ -409,29 +447,47 @@ int main(int argc, char *argv[]) {
 
   cerr << APP_TITLE << endl;
 
+#ifndef GLFWTHREAD
+  thread io_thread([&]() {
+#else  // ifdef GLFWTHREAD
+  g_payload = [&]() {
+#endif  // ifdef GLFWTHREAD
+
+    while (is_running && cin.good()) {
+
+      cerr << "(sc) ";
+      getline(cin, line);
+      if (!commander.Parse(line))
+        cerr << kInvalidMessage << endl;
+
+      // if application is working in spawn mode, output a spiliter (u001f) 
+      // between messages.
+      if (is_spawn) {
+        cout << static_cast<char>(31);
+        cerr << static_cast<char>(31);
+      }
+
+    }
+    
+    render_timer.Stop();
+
+#ifndef GLFWTHREAD
+  });
+#else  // ifdef GLFWTHREAD
+  };
+  GLFWthread io_thread = glfwCreateThread(PayloadProxy, nullptr);
+#endif  // ifdef GLFWTHREAD
+
   // render at 30fps
   render_timer.Start(30);
-  
-  while (!g_quit && cin.good()) {
 
-    cerr << "(sc) ";
+#ifndef GLFWTHREAD
+  io_thread.join();
+#else  // ifdef GLFWTHREAD
+  glfwWaitThread(io_thread, GLFW_WAIT);
+  glfwDestroyThread(io_thread);
+#endif  // ifdef GLFWTHREAD
 
-    getline(cin, line);
-    iss.str(line);
-    iss.clear();
-    
-    if (!(iss >> command))
-      command = "";
-    
-    if (!commander.Parse(command))
-      cerr << kInvalidMessage << endl;
-    
-    if (is_spawn)
-      cout << static_cast<char>(31);
-
-  }
-  
-  render_timer.Stop();
   cout << kQuitMessage << endl;
 
 }

@@ -28,7 +28,7 @@ enum PBOStatus : int {
 class Controller : public vc::timing::Ticker {
 
  public:
-  Controller();
+  Controller(int width, int height);
   Controller(const Controller&) = delete;
   Controller &operator = (const Controller&) = delete;
   virtual ~Controller();
@@ -55,13 +55,18 @@ class Controller : public vc::timing::Ticker {
   bool SetColorTune(const std::string&, int, float, float, float);
   bool DelaySource(const std::string&, int);
 
-  // no need to aquire lock for these actions, for only one thread updates the 
-  // values.
+#ifdef CPU
+  void matrix_world(const std::vector<float>&);
+  void matrix_post(const std::vector<float>&);
+  void mode(CameraMode);
+  void background_color(const std::vector<float>&);
+#else  // ifndef CPU
   void matrix_world(const std::vector<float> &m) { matrix_world_ = m; }
   void matrix_post(const std::vector<float> &m) { matrix_post_ = m; }
   void mode(CameraMode new_mode) { mode_ = new_mode; }
   void background_color(const std::vector<float> &m) { background_color_ = m; }
-  
+#endif  // ifndef CPU
+
   const Collection &data() { return data_; }
   const gl::Matrix<4> &matrix_world() { return matrix_world_; }
   const gl::Matrix<4> &matrix_post() { return matrix_post_; }
@@ -71,9 +76,9 @@ class Controller : public vc::timing::Ticker {
  private:
 #ifndef GLFWTHREAD
   std::mutex lock_;
-#else
+#else  // ifdef GLFWTHREAD
   GLFWmutex lock_;
-#endif
+#endif  // ifdef GLFWTHREAD
   Collection data_;
   gl::Matrix<4> matrix_world_, matrix_post_;
   CameraMode mode_;
@@ -85,12 +90,29 @@ class Controller : public vc::timing::Ticker {
   gl::ParameterSetter module_matrix_ptr_, projection_matrix_ptr_;
   gl::ParameterSetter module_hsb_tune_ptr_;
   gl::ParameterSetter vertex_pos_ptr_, texture_pos_ptr_;
+  
+#ifdef CPU
+
+  struct PixelInfo {
+    int step;       // 2's step-th power (-1, suggest an empty pixel)
+    vc::Feed* feed; // pixel's source feed.
+    int indices[8]; // pixels in the refering image frame.
+    float z;
+  };
+  PixelInfo *pixel_info_;
+  GLubyte canvas_bg_[3];
+  GLubyte *texture_bitmap_;
+  
+  void Preprocess();
+  void Paint(int);
+
+#else  // ifndef CPU
+  
+#ifdef PBO
 
   GLubyte *texture_storage_;
   gl::BufferResource pixel_buffers_;
   
-#ifdef PBO
-
   struct PBOInfo {
     int index;
     int width, height;
@@ -106,7 +128,9 @@ class Controller : public vc::timing::Ticker {
   bool FillPBO(PBOInfo&);
   bool RenderPBO(PBOInfo&);
 
-#endif
+#endif  // ifdef PBO
+
+#endif  // ifdef CPU
 
 };
 

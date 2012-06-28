@@ -1,5 +1,5 @@
 CC = g++
-CPPFLAGS = -g -Wall -O2 -std=c++0x
+CPPFLAGS = -Wall -O2 -std=c++0x
 sources = $(wildcard *.cc)
 objects = $(sources:.cc=.o)
 
@@ -13,4 +13,10 @@ endif
 
 .cc.o: 
 	$(CC) $(CPPFLAGS) $(other_flags) $(include_dirs) -c $< -o $@
+
+%.pbo.o: %.cc
+	$(CC) $(CPPFLAGS) $(other_flags) -DPBO $(include_dirs) -c $< -o $@
+
+%.cpu.o: %.cc
+	$(CC) $(CPPFLAGS) $(other_flags) -DCPU $(include_dirs) -c $< -o $@
 

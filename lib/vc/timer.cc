@@ -12,54 +12,67 @@ using std::this_thread::sleep_until;
 namespace vc {
 namespace timing {
 
-Timer::Timer(Ticker *ticker) : running_(false), ticker_(ticker) {
+Timer::Timer(Ticker *ticker, bool new_thread) : new_thread_(new_thread),
+  running_(false), ticker_(ticker) {
 
 }
 
 Timer::~Timer() {
-  Stop();
+  if (new_thread_) {
+    Stop();
 #ifndef GLFWTHREAD
-  if (thread_.joinable())
-    thread_.join();
-#else
-  glfwWaitThread(thread_, GLFW_WAIT);
-  glfwDestroyThread(thread_);
-#endif
+    if (thread_.joinable())
+      thread_.join();
+#else  // ifdef GLFWTHREAD
+    glfwWaitThread(thread_, GLFW_WAIT);
+    glfwDestroyThread(thread_);
+#endif  // ifdef GLFWTHREAD
+  }
 }
 
 void Timer::Start(double defined_tps = 0) {
 #ifndef GLFWTHREAD
   if (!running_.exchange(true)) {
     tps_ = defined_tps;
-    thread_ = thread(defined_tps > 0 ? StaticTimer : DynamicTimer, ref(*this));
+    if (new_thread_)
+      thread_ = thread(defined_tps > 0 ? StaticTimer : DynamicTimer, ref(*this));
+    else if (defined_tps > 0)
+      StaticTimer(*this);
+    else
+      DynamicTimer(*this);
   }
-#else
+#else  // ifdef GLFWTHREAD
   // as the timer should not be accessed by more than one thread, ignore ABA
   // problem here, for there is no atomic type in GLFWTHREAD.
   if (!running_) {
     running_ = true;
     tps_ = defined_tps;
-    thread_ = glfwCreateThread(defined_tps > 0 ? StaticTimer : DynamicTimer,
-        (void*)this);
+    if (new_thread_)
+      thread_ = glfwCreateThread(defined_tps > 0 ? StaticTimer : DynamicTimer,
+          (void*)this);
+    else if (defined_tps > 0)
+      StaticTimer((void*)this);
+    else
+      DynamicTimer((void*)this);
   }
-#endif
+#endif  // ifdef GLFWTHREAD
 }
 
 void Timer::Stop() {
 #ifndef GLFWTHREAD
   running_.exchange(false);
-#else
+#else  // ifdef GLFWTHREAD
   running_ = false;
-#endif
+#endif  // ifdef GLFWTHREAD
 }
 
 #ifndef GLFWTHREAD
 void Timer::StaticTimer(Timer &self) {
-#else
+#else  // ifdef GLFWTHREAD
 void Timer::StaticTimer(void *self_ptr) {
   
   Timer &self = *(Timer*)self_ptr;
-#endif
+#endif  // ifdef GLFWTHREAD
 
   self.ticker_->BeforeStart();
   
@@ -109,10 +122,10 @@ void Timer::StaticTimer(void *self_ptr) {
 
 #ifndef GLFWTHREAD
     sleep_until(expect_time);
-#else
+#else  // ifdef GLFWTHREAD
     glfwSleep(duration_cast<std::chrono::milliseconds>(expect_time - Clock::now())
         .count() / 1000.0);
-#endif
+#endif  // ifdef GLFWTHREAD
 
   }
   
@@ -122,11 +135,10 @@ void Timer::StaticTimer(void *self_ptr) {
 
 #ifndef GLFWTHREAD
 void Timer::DynamicTimer(Timer &self) {
-#else
+#else  // ifdef GLFWTHREAD
 void Timer::DynamicTimer(void *self_ptr) {
-  
   Timer &self = *(Timer*)self_ptr;
-#endif
+#endif  // ifdef GLFWTHREAD
   
   self.ticker_->BeforeStart();
   
@@ -157,10 +169,10 @@ void Timer::DynamicTimer(void *self_ptr) {
 
 #ifndef GLFWTHREAD
     sleep_until(expect_time);
-#else
+#else  // ifdef GLFWTHREAD
     glfwSleep(duration_cast<std::chrono::milliseconds>(expect_time - Clock::now())
         .count() / 1000.0);
-#endif
+#endif  // ifdef GLFWTHREAD
 
   }
   
